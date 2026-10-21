@@ -8,6 +8,8 @@ Strictly evaluates test runner output without LLM subjectivity:
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 from typing import Any, Dict, List, Optional, Set
 
@@ -34,6 +36,14 @@ class TestResultEvaluator:
     }
 
     @classmethod
+    def _verdict_status(cls, verdict: VerificationStatus, fine_grained: bool, legacy_exec_err: bool = False) -> str:
+        if fine_grained:
+            return verdict.value
+        if legacy_exec_err or verdict in (VerificationStatus.INCONCLUSIVE, VerificationStatus.UNSUPPORTED):
+            return VerificationStatus.EXECUTION_ERROR.value
+        return verdict.value
+
+    @classmethod
     def evaluate(
         cls,
         job_id: str,
@@ -46,6 +56,8 @@ class TestResultEvaluator:
         runner_error: Optional[str] = None,
         run_id: Optional[str] = None,
         patch_id: Optional[str] = None,
+        run_token: Optional[str] = None,
+        fine_grained: bool = False,
     ) -> VerificationResult:
         """Evaluate runner outputs and produce a structured, tamper-proof VerificationResult."""
 
@@ -54,7 +66,8 @@ class TestResultEvaluator:
             return VerificationResult(
                 job_id=job_id,
                 patch_hash=patch_hash,
-                status=VerificationStatus.EXECUTION_ERROR.value,
+                status=cls._verdict_status(VerificationStatus.EXECUTION_ERROR, fine_grained),
+                verdict_category=VerificationStatus.EXECUTION_ERROR.value,
                 duration_ms=duration_ms,
                 execution_error="Execution timed out in sandbox environment.",
                 run_id=run_id,
@@ -66,20 +79,22 @@ class TestResultEvaluator:
             return VerificationResult(
                 job_id=job_id,
                 patch_hash=patch_hash,
-                status=VerificationStatus.EXECUTION_ERROR.value,
+                status=cls._verdict_status(VerificationStatus.EXECUTION_ERROR, fine_grained),
+                verdict_category=VerificationStatus.EXECUTION_ERROR.value,
                 duration_ms=duration_ms,
                 execution_error=f"Runner error: {runner_error}",
                 run_id=run_id,
                 patch_id=patch_id,
             )
 
-        # 3. Report Missing / Malformed Check
+        # 3. Report Missing Check -> INCONCLUSIVE / EXECUTION_ERROR
         if not report_json_str or not report_json_str.strip():
             err_msg = f"Test report missing or runner exited prematurely with code {exit_code}."
             return VerificationResult(
                 job_id=job_id,
                 patch_hash=patch_hash,
-                status=VerificationStatus.EXECUTION_ERROR.value,
+                status=cls._verdict_status(VerificationStatus.INCONCLUSIVE, fine_grained),
+                verdict_category=VerificationStatus.INCONCLUSIVE.value,
                 duration_ms=duration_ms,
                 execution_error=err_msg,
                 run_id=run_id,
@@ -94,7 +109,8 @@ class TestResultEvaluator:
             return VerificationResult(
                 job_id=job_id,
                 patch_hash=patch_hash,
-                status=VerificationStatus.EXECUTION_ERROR.value,
+                status=cls._verdict_status(VerificationStatus.EXECUTION_ERROR, fine_grained),
+                verdict_category=VerificationStatus.EXECUTION_ERROR.value,
                 duration_ms=duration_ms,
                 execution_error=f"Malformed report JSON: {exc}",
                 run_id=run_id,
@@ -103,14 +119,17 @@ class TestResultEvaluator:
 
         summary = report_data.get("summary", {})
         tests_data = report_data.get("tests", [])
+        adversarial_report = report_data.get("adversarial_report")
+        mutation_report = report_data.get("mutation_report")
 
         if not isinstance(summary, dict) or not isinstance(tests_data, list):
             return VerificationResult(
                 job_id=job_id,
                 patch_hash=patch_hash,
-                status=VerificationStatus.EXECUTION_ERROR.value,
+                status=cls._verdict_status(VerificationStatus.INCONCLUSIVE, fine_grained),
+                verdict_category=VerificationStatus.INCONCLUSIVE.value,
                 duration_ms=duration_ms,
-                execution_error="Invalid report schema structure.",
+                execution_error="Invalid report schema structure: missing summary or tests array.",
                 run_id=run_id,
                 patch_id=patch_id,
             )
@@ -128,27 +147,108 @@ class TestResultEvaluator:
         failed = summary.get("failed", recorded_failed)
         errored = summary.get("error", recorded_errored)
 
-        # Reconcile summary with test record counts
+        # Reconcile summary with test record counts -> Contradictory evidence (INCONCLUSIVE)
         if total != recorded_total or passed != recorded_passed or failed != recorded_failed:
             return VerificationResult(
                 job_id=job_id,
                 patch_hash=patch_hash,
-                status=VerificationStatus.EXECUTION_ERROR.value,
+                status=cls._verdict_status(VerificationStatus.INCONCLUSIVE, fine_grained),
+                verdict_category=VerificationStatus.INCONCLUSIVE.value,
                 duration_ms=duration_ms,
                 execution_error="Evidence tampering detected: summary counts mismatch individual test records.",
                 run_id=run_id,
                 patch_id=patch_id,
             )
 
-        # Extract failed test identifiers
+        # 3b. Attestation Verification (if run_token was issued by trusted host)
+        if run_token:
+            attestation = report_data.get("attestation")
+            if not isinstance(attestation, dict) or "signature" not in attestation:
+                return VerificationResult(
+                    job_id=job_id,
+                    patch_hash=patch_hash,
+                    status=cls._verdict_status(VerificationStatus.INCONCLUSIVE, fine_grained),
+                    verdict_category=VerificationStatus.INCONCLUSIVE.value,
+                    duration_ms=duration_ms,
+                    execution_error="Evidence integrity failure: Missing or invalid cryptographic HMAC attestation.",
+                    run_id=run_id,
+                    patch_id=patch_id,
+                )
+            expected_payload = f"{total}:{passed}:{failed}:{errored}:{report_data.get('exitstatus', exit_code)}:{patch_hash}"
+            expected_sig = hmac.new(
+                run_token.encode("utf-8"),
+                expected_payload.encode("utf-8"),
+                hashlib.sha256,
+            ).hexdigest()
+            if not hmac.compare_digest(str(attestation.get("signature", "")), expected_sig):
+                return VerificationResult(
+                    job_id=job_id,
+                    patch_hash=patch_hash,
+                    status=cls._verdict_status(VerificationStatus.INCONCLUSIVE, fine_grained),
+                    verdict_category=VerificationStatus.INCONCLUSIVE.value,
+                    duration_ms=duration_ms,
+                    execution_error="Evidence tampering detected: Cryptographic HMAC attestation mismatch.",
+                    run_id=run_id,
+                    patch_id=patch_id,
+                )
+
+        # Extract test records with anti-tampering guards
         failed_tests: List[str] = []
+        mandatory_failed_tests: List[str] = []
         executed_test_functions: Set[str] = set()
         test_results: List[Dict[str, str]] = []
+        seen_nodeids: Set[str] = set()
 
         for t in tests_data:
             if not isinstance(t, dict):
-                continue
+                return VerificationResult(
+                    job_id=job_id,
+                    patch_hash=patch_hash,
+                    status=cls._verdict_status(VerificationStatus.INCONCLUSIVE, fine_grained),
+                    verdict_category=VerificationStatus.INCONCLUSIVE.value,
+                    duration_ms=duration_ms,
+                    execution_error="Evidence tampering detected: Individual test entry is not a dictionary.",
+                    run_id=run_id,
+                    patch_id=patch_id,
+                )
             nodeid = str(t.get("nodeid", ""))
+            if not nodeid:
+                return VerificationResult(
+                    job_id=job_id,
+                    patch_hash=patch_hash,
+                    status=cls._verdict_status(VerificationStatus.INCONCLUSIVE, fine_grained),
+                    verdict_category=VerificationStatus.INCONCLUSIVE.value,
+                    duration_ms=duration_ms,
+                    execution_error="Evidence tampering detected: Empty test node ID in report.",
+                    run_id=run_id,
+                    patch_id=patch_id,
+                )
+            if nodeid in seen_nodeids:
+                return VerificationResult(
+                    job_id=job_id,
+                    patch_hash=patch_hash,
+                    status=cls._verdict_status(VerificationStatus.INCONCLUSIVE, fine_grained),
+                    verdict_category=VerificationStatus.INCONCLUSIVE.value,
+                    duration_ms=duration_ms,
+                    execution_error=f"Evidence tampering detected: Duplicate test node ID '{nodeid}'.",
+                    run_id=run_id,
+                    patch_id=patch_id,
+                )
+            seen_nodeids.add(nodeid)
+
+            # Anti-tampering: Reject external file test nodes outside protected_tests
+            if "::" in nodeid and "protected_tests" not in nodeid:
+                return VerificationResult(
+                    job_id=job_id,
+                    patch_hash=patch_hash,
+                    status=cls._verdict_status(VerificationStatus.POLICY_REJECTED, fine_grained, legacy_exec_err=True),
+                    verdict_category=VerificationStatus.POLICY_REJECTED.value,
+                    duration_ms=duration_ms,
+                    execution_error=f"Evidence tampering detected: Test node '{nodeid}' is outside protected test suite.",
+                    run_id=run_id,
+                    patch_id=patch_id,
+                )
+
             outcome = t.get("outcome")
             func_name = nodeid.split("::")[-1] if "::" in nodeid else nodeid
             executed_test_functions.add(func_name)
@@ -157,15 +257,19 @@ class TestResultEvaluator:
                 safe_name = re.sub(r"[^A-Za-z0-9_./:\-\[\]]", "_", nodeid)[:128]
                 test_results.append({"name": safe_name, "outcome": outcome})
 
+            is_optional = bool(t.get("is_optional", False)) or "[optional]" in nodeid.lower() or "ai_suggested" in nodeid.lower()
             if outcome in ("failed", "error"):
                 failed_tests.append(nodeid)
+                if not is_optional:
+                    mandatory_failed_tests.append(nodeid)
 
-        # 4. Zero or Insufficient Tests Collected Check
+        # 4. Zero or Insufficient Tests Collected Check -> INCONCLUSIVE
         if total == 0 or total < cls.MIN_REQUIRED_TESTS:
             return VerificationResult(
                 job_id=job_id,
                 patch_hash=patch_hash,
-                status=VerificationStatus.EXECUTION_ERROR.value,
+                status=cls._verdict_status(VerificationStatus.INCONCLUSIVE, fine_grained),
+                verdict_category=VerificationStatus.INCONCLUSIVE.value,
                 tests_total=total,
                 tests_passed=passed,
                 tests_failed=failed + errored,
@@ -174,6 +278,8 @@ class TestResultEvaluator:
                 execution_error=f"Incomplete test execution: collected {total} tests (minimum {cls.MIN_REQUIRED_TESTS} required).",
                 run_id=run_id,
                 patch_id=patch_id,
+                adversarial_report=adversarial_report,
+                mutation_report=mutation_report,
             )
 
         # 5. Required Protected Test Suite Inventory Check (Anti-Evasion)
@@ -182,7 +288,8 @@ class TestResultEvaluator:
             return VerificationResult(
                 job_id=job_id,
                 patch_hash=patch_hash,
-                status=VerificationStatus.EXECUTION_ERROR.value,
+                status=cls._verdict_status(VerificationStatus.INCONCLUSIVE, fine_grained),
+                verdict_category=VerificationStatus.INCONCLUSIVE.value,
                 tests_total=total,
                 tests_passed=passed,
                 tests_failed=failed + errored,
@@ -191,30 +298,54 @@ class TestResultEvaluator:
                 execution_error=f"Required protected security test(s) not executed: {sorted(missing_required)}",
                 run_id=run_id,
                 patch_id=patch_id,
+                adversarial_report=adversarial_report,
+                mutation_report=mutation_report,
             )
+
+        # 6. Stdout cross-validation: if report claims all-pass, ensure stdout stream confirms pytest execution
+        if raw_output and exit_code == 0 and failed == 0 and errored == 0:
+            if "passed" not in raw_output.lower():
+                return VerificationResult(
+                    job_id=job_id,
+                    patch_hash=patch_hash,
+                    status=cls._verdict_status(VerificationStatus.INCONCLUSIVE, fine_grained),
+                    verdict_category=VerificationStatus.INCONCLUSIVE.value,
+                    duration_ms=duration_ms,
+                    execution_error="Evidence tampering detected: Standard output log contradicts reported all-passing status.",
+                    run_id=run_id,
+                    patch_id=patch_id,
+                    adversarial_report=adversarial_report,
+                mutation_report=mutation_report,
+                )
 
         skipped = summary.get("skipped", 0)
         if skipped or passed + failed + errored != total:
             return VerificationResult(
                 job_id=job_id, patch_hash=patch_hash,
-                status=VerificationStatus.EXECUTION_ERROR.value,
+                status=cls._verdict_status(VerificationStatus.INCONCLUSIVE, fine_grained),
+                verdict_category=VerificationStatus.INCONCLUSIVE.value,
                 tests_total=total, tests_passed=passed, tests_failed=failed + errored,
                 failed_tests=failed_tests, duration_ms=duration_ms,
                 execution_error="Required test execution was incomplete or skipped.",
                 run_id=run_id, patch_id=patch_id,
                 tests_collected=total, collection_complete=False,
                 execution_completed=False,
+                adversarial_report=adversarial_report,
+                mutation_report=mutation_report,
             )
         if exit_code not in (0, 1):
             return VerificationResult(
                 job_id=job_id, patch_hash=patch_hash,
-                status=VerificationStatus.EXECUTION_ERROR.value,
+                status=cls._verdict_status(VerificationStatus.EXECUTION_ERROR, fine_grained),
+                verdict_category=VerificationStatus.EXECUTION_ERROR.value,
                 tests_total=total, tests_passed=passed, tests_failed=failed + errored,
                 failed_tests=failed_tests, duration_ms=duration_ms,
                 execution_error="Pytest exited abnormally.",
                 run_id=run_id, patch_id=patch_id,
                 tests_collected=total, collection_complete=False,
                 execution_completed=False,
+                adversarial_report=adversarial_report,
+                mutation_report=mutation_report,
             )
 
         # 6. Exit Code Contradiction Check (Crash after writing report)
@@ -222,7 +353,8 @@ class TestResultEvaluator:
             return VerificationResult(
                 job_id=job_id,
                 patch_hash=patch_hash,
-                status=VerificationStatus.EXECUTION_ERROR.value,
+                status=cls._verdict_status(VerificationStatus.INCONCLUSIVE, fine_grained),
+                verdict_category=VerificationStatus.INCONCLUSIVE.value,
                 tests_total=total,
                 tests_passed=passed,
                 tests_failed=failed + errored,
@@ -231,14 +363,18 @@ class TestResultEvaluator:
                 execution_error=f"Exit code contradiction: process exited with code {exit_code} despite zero reported failures.",
                 run_id=run_id,
                 patch_id=patch_id,
+                adversarial_report=adversarial_report,
+                mutation_report=mutation_report,
             )
 
-        # 7. Failures Detected Check
-        if failed > 0 or errored > 0:
+        # 7. Mandatory Failures Detected Check
+        # Optional test failures do not fail verification if all mandatory tests pass
+        if mandatory_failed_tests:
             return VerificationResult(
                 job_id=job_id,
                 patch_hash=patch_hash,
-                status=VerificationStatus.VERIFICATION_FAILED.value,
+                status=cls._verdict_status(VerificationStatus.VERIFICATION_FAILED, fine_grained),
+                verdict_category=VerificationStatus.VERIFICATION_FAILED.value,
                 tests_total=total,
                 tests_passed=passed,
                 tests_failed=failed + errored,
@@ -252,17 +388,20 @@ class TestResultEvaluator:
                 tests_collected=total,
                 collection_complete=True,
                 execution_completed=True,
+                adversarial_report=adversarial_report,
+                mutation_report=mutation_report,
             )
 
-        # 8. All Tests Passed Strictly
+        # 8. All Mandatory Tests Passed Strictly (even if optional tests had non-blocking warnings)
         return VerificationResult(
             job_id=job_id,
             patch_hash=patch_hash,
-            status=VerificationStatus.VERIFIED.value,
+            status=cls._verdict_status(VerificationStatus.VERIFIED, fine_grained),
+            verdict_category=VerificationStatus.VERIFIED.value,
             tests_total=total,
             tests_passed=passed,
-            tests_failed=0,
-            failed_tests=[],
+            tests_failed=failed + errored,
+            failed_tests=failed_tests,
             test_results=test_results,
             duration_ms=duration_ms,
             execution_error=None,
@@ -272,4 +411,6 @@ class TestResultEvaluator:
             tests_collected=total,
             collection_complete=True,
             execution_completed=True,
+            adversarial_report=adversarial_report,
+            mutation_report=mutation_report,
         )

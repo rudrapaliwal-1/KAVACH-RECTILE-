@@ -32,6 +32,10 @@ class Settings:
     planner_timeout_seconds: float = 300.0
     verifier_timeout_seconds: float = 300.0
     lease_seconds: float = 30.0
+    github_webhook_secret: str = field(default="", repr=False)
+    github_token: str = field(default="", repr=False)
+    github_allowed_repositories: str = ""
+    sentinel_base_url: str = "http://localhost:5173"
 
     def __post_init__(self) -> None:
         if self.environment not in ("development", "demo", "production"):
@@ -85,4 +89,8 @@ class Settings:
             planner_timeout_seconds=float(os.getenv("SENTINEL_PLANNER_TIMEOUT_SECONDS", "300")),
             verifier_timeout_seconds=float(os.getenv("SENTINEL_VERIFIER_TIMEOUT_SECONDS", "300")),
             lease_seconds=float(os.getenv("SENTINEL_LEASE_SECONDS", "30")),
+            github_webhook_secret=os.getenv("SENTINEL_GITHUB_WEBHOOK_SECRET", ""),
+            github_token=os.getenv("SENTINEL_GITHUB_TOKEN", ""),
+            github_allowed_repositories=os.getenv("SENTINEL_GITHUB_ALLOWED_REPOSITORIES", ""),
+            sentinel_base_url=os.getenv("SENTINEL_BASE_URL", os.getenv("SENTINEL_FRONTEND_ORIGIN", "http://localhost:5173")),
         )

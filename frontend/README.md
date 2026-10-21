@@ -1,6 +1,8 @@
-# SENTINEL-X Frontend
+# KAVACH-X Frontend
 
-React + TypeScript + Vite frontend for **SENTINEL-X — Autonomous Security Remediation with Adversarial Verification**.
+React + TypeScript + Vite frontend for **KAVACH-X — AI-assisted security remediation with explicit human approval, independent verification, and inspectable evidence**.
+
+**Brand Tagline:** "Find the Vulnerability. Prove the Fix."
 
 ## Current implementation status
 

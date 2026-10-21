@@ -17,6 +17,7 @@ import asyncio
 import inspect
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import tempfile
@@ -53,6 +54,14 @@ def sanitize_log(text: str) -> str:
 
 def check_docker_available() -> tuple[bool, str]:
     """Verify that Docker binary and daemon are operational without executing user code."""
+    try:
+        from backend.safe_cache import safe_cache
+        return safe_cache.get_or_check_docker_preflight(_raw_check_docker_available, ttl_seconds=60.0)
+    except Exception:
+        return _raw_check_docker_available()
+
+
+def _raw_check_docker_available() -> tuple[bool, str]:
     if not shutil.which("docker"):
         return False, "Docker binary not found on host system."
     try:
@@ -234,7 +243,8 @@ async def verify_patch(
                 patch_id=patch_id,
             )
 
-        # 7. Execute Restricted Sandbox Container
+        # 7. Execute Restricted Sandbox Container with Ephemeral Attestation Token
+        run_token = secrets.token_hex(32)
         docker_cmd = [
             "docker", "run",
             "--name", container_id,
@@ -248,6 +258,10 @@ async def verify_patch(
             "--read-only",
             "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m",
             "-e", "VERIFICATION_REPORT_PATH=/workspace/report/test_report.json",
+            "-e", f"VERIFICATION_RUN_TOKEN={run_token}",
+            "-e", f"VERIFICATION_EXPECTED_HASH={patch_hash}",
+            "-e", f"VERIFICATION_JOB_ID={job_id}",
+            "-e", f"VERIFICATION_RUN_ID={run_id}",
             "-e", "PYTHONPATH=/workspace",
             "-e", "PYTHONDONTWRITEBYTECODE=1",
             "-e", "PYTHONUNBUFFERED=1",
@@ -311,6 +325,7 @@ async def verify_patch(
             runner_error=sanitize_log(runner_error) if runner_error else None,
             run_id=run_id,
             patch_id=patch_id,
+            run_token=run_token,
         )
 
     finally:

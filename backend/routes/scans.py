@@ -56,7 +56,9 @@ def start_scan(project_id: str, request: Request):
 @router.get('/api/projects/{project_id}/scans')
 def project_scans(project_id: str, request: Request):
     _project(request, project_id)
-    rows = _rows(request, 'SELECT * FROM project_scans WHERE project_id = ? ORDER BY created_at DESC', (project_id,))
+    rows = _rows(request, '''SELECT s.*,
+                             (SELECT count(*) FROM scan_findings f WHERE f.scan_id = s.id) AS finding_count
+                             FROM project_scans s WHERE s.project_id = ? ORDER BY s.created_at DESC''', (project_id,))
     for row in rows:
         row['languages'] = json.loads(row.pop('languages_json'))
         row['manifests'] = json.loads(row.pop('manifest_json'))

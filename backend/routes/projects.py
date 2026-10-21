@@ -21,10 +21,10 @@ from ..manifest import TARGET_MANIFEST
 from ..models import WorkflowError
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
-MAX_ARCHIVE = 10 * 1024 * 1024
-MAX_EXTRACTED = 32 * 1024 * 1024
-MAX_FILE = 2 * 1024 * 1024
-MAX_FILES = 500
+MAX_ARCHIVE = 50 * 1024 * 1024
+MAX_EXTRACTED = 150 * 1024 * 1024
+MAX_FILE = 20 * 1024 * 1024
+MAX_FILES = 2500
 PROJECT_ID = re.compile(r"^project-[0-9a-f]{32}$")
 SENSITIVE = re.compile(r"(^|/)(\.env|\.git|\.ssh|node_modules|__pycache__|secrets?|credentials?)(/|$)|\.(pem|key|p12|pfx)$", re.I)
 
@@ -53,6 +53,20 @@ def _source_dir(request: Request, project_id: str) -> Path:
     return request.app.state.workflow.settings.project_root / project_id / "source"
 
 
+def compute_source_revision(root: Path) -> str:
+    """Deterministic source-tree digest for general uploaded projects."""
+    digest = hashlib.sha256()
+    for file_path in sorted(root.rglob("*")):
+        if file_path.is_file() and not file_path.is_symlink():
+            rel = file_path.relative_to(root).as_posix()
+            digest.update(rel.encode("utf-8") + b"\0")
+            try:
+                digest.update(file_path.read_bytes())
+            except OSError:
+                pass
+    return "sha256:" + digest.hexdigest()
+
+
 @router.post("", status_code=201)
 def create_project(payload: NewProject, request: Request):
     if not payload.name.strip():
@@ -60,10 +74,28 @@ def create_project(payload: NewProject, request: Request):
     project_id = "project-" + uuid4().hex
     now = utc_now()
     with request.app.state.workflow.db.transaction() as db:
-        db.execute("INSERT INTO projects (id, owner_id, name, description, status, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                   (project_id, current_user(), payload.name.strip(), payload.description.strip(), "CREATED", now))
-    return {"id": project_id, "name": payload.name.strip(), "description": payload.description.strip(),
-            "status": "CREATED", "created_at": now}
+        existing = db.execute(
+            "SELECT id FROM projects WHERE owner_id = ? AND name = ? AND status = 'CREATED'",
+            (current_user(), payload.name.strip()),
+        ).fetchone()
+        if existing:
+            project_id = existing["id"]
+            db.execute(
+                "UPDATE projects SET description = ?, created_at = ? WHERE id = ?",
+                (payload.description.strip(), now, project_id),
+            )
+        else:
+            db.execute(
+                "INSERT INTO projects (id, owner_id, name, description, status, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (project_id, current_user(), payload.name.strip(), payload.description.strip(), "CREATED", now),
+            )
+    return {
+        "id": project_id,
+        "name": payload.name.strip(),
+        "description": payload.description.strip(),
+        "status": "CREATED",
+        "created_at": now,
+    }
 
 
 @router.get("")
@@ -136,7 +168,8 @@ def _validate_zip(data: bytes):
             if info.is_dir():
                 continue
             total += info.file_size
-            if info.file_size > MAX_FILE or total > MAX_EXTRACTED or info.compress_size == 0 or info.file_size / info.compress_size > 100:
+            if (info.file_size > MAX_FILE or total > MAX_EXTRACTED or
+                    (info.file_size > 0 and (info.compress_size == 0 or info.file_size / max(info.compress_size, 1) > 100))):
                 raise WorkflowError("archive exceeds extraction limits", 422, "ZIP_BOMB")
         return archive, entries
     except zipfile.BadZipFile:
@@ -230,9 +263,10 @@ async def upload_file(project_id: str, request: Request):
         (destination / name).write_bytes(data)
         profile = classify(destination)
         status = "READY_FOR_SCAN" if profile["supported"] else "UNSUPPORTED"
+        revision = "sha256:" + hashlib.sha256(data).hexdigest()
         with request.app.state.workflow.db.transaction() as db:
-            db.execute("UPDATE projects SET status=?, framework=?, archive_name=?, archive_sha256=?, uploaded_at=? WHERE id=? AND owner_id=? AND status='CREATED'",
-                       (status, profile["framework"], name, "sha256:" + hashlib.sha256(data).hexdigest(), utc_now(), project_id, current_user()))
+            db.execute("UPDATE projects SET status=?, framework=?, archive_name=?, archive_sha256=?, source_revision=?, uploaded_at=? WHERE id=? AND owner_id=? AND status='CREATED'",
+                       (status, profile["framework"], name, "sha256:" + hashlib.sha256(data).hexdigest(), revision, utc_now(), project_id, current_user()))
         request.app.state.workflow._telemetry("project.uploaded", project_id=project_id, success=True)
         return _public(_project(request, project_id))
     except Exception:

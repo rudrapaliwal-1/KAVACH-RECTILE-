@@ -28,7 +28,7 @@ class Database:
         for suffix in ("-wal", "-shm"):
             try:
                 os.chmod(str(self.path) + suffix, 0o600)
-            except FileNotFoundError:
+            except (FileNotFoundError, PermissionError, OSError):
                 pass
 
     def connect(self) -> sqlite3.Connection:
@@ -254,6 +254,62 @@ class Database:
                     created_at TEXT NOT NULL,
                     purpose TEXT NOT NULL DEFAULT 'AI_REVIEW'
                 );
+                CREATE TABLE IF NOT EXISTS candidate_patches (
+                    id TEXT PRIMARY KEY,
+                    job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+                    project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+                    finding_id TEXT NOT NULL,
+                    authoring_source TEXT NOT NULL,
+                    patch_format TEXT NOT NULL,
+                    patch_hash TEXT NOT NULL,
+                    source_revision TEXT NOT NULL,
+                    policy_status TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_candidates_finding ON candidate_patches(finding_id, created_at);
+                CREATE INDEX IF NOT EXISTS idx_candidates_project ON candidate_patches(project_id, created_at);
+                CREATE TABLE IF NOT EXISTS github_pr_bindings (
+                    id TEXT PRIMARY KEY,
+                    job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+                    repo_full_name TEXT NOT NULL,
+                    pr_number INTEGER NOT NULL,
+                    base_sha TEXT NOT NULL,
+                    head_sha TEXT NOT NULL,
+                    patch_hash TEXT NOT NULL,
+                    commit_status TEXT NOT NULL,
+                    status_target_url TEXT,
+                    is_stale INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_github_pr_repo ON github_pr_bindings(repo_full_name, pr_number);
+                CREATE INDEX IF NOT EXISTS idx_github_pr_job ON github_pr_bindings(job_id);
+                CREATE TABLE IF NOT EXISTS github_deliveries (
+                    delivery_id TEXT PRIMARY KEY,
+                    event_type TEXT NOT NULL,
+                    repo_full_name TEXT NOT NULL,
+                    received_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS regression_memory (
+                    id TEXT PRIMARY KEY,
+                    vulnerability_profile TEXT NOT NULL,
+                    file_path TEXT NOT NULL,
+                    failure_pattern TEXT NOT NULL,
+                    sanitized_explanation TEXT NOT NULL,
+                    remediation_pattern TEXT NOT NULL,
+                    trusted_test_scenarios_json TEXT NOT NULL,
+                    historical_limitations TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_regmem_vuln ON regression_memory(vulnerability_profile, file_path);
+                CREATE TABLE IF NOT EXISTS verification_timings (
+                    id TEXT PRIMARY KEY,
+                    job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+                    phase TEXT NOT NULL,
+                    duration_ms INTEGER NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_timings_job ON verification_timings(job_id, phase);
             """)
             try:
                 columns = {row["name"] for row in db.execute("PRAGMA table_info(approvals)")}
@@ -267,6 +323,18 @@ class Database:
                 job_columns = {row["name"] for row in db.execute("PRAGMA table_info(jobs)")}
                 if "version" not in job_columns:
                     db.execute("ALTER TABLE jobs ADD COLUMN version INTEGER NOT NULL DEFAULT 0")
+                proposal_columns = {row["name"] for row in db.execute("PRAGMA table_info(patch_proposals)")}
+                if "authoring_source" not in proposal_columns:
+                    db.execute("ALTER TABLE patch_proposals ADD COLUMN authoring_source TEXT NOT NULL DEFAULT 'Ollama (Internal Agent)'")
+                attestation_cols = {row["name"] for row in db.execute("PRAGMA table_info(run_attestations)")}
+                if "attestation_payload_json" not in attestation_cols:
+                    db.execute("ALTER TABLE run_attestations ADD COLUMN attestation_payload_json TEXT")
+                if "signature" not in attestation_cols:
+                    db.execute("ALTER TABLE run_attestations ADD COLUMN signature TEXT")
+                if "key_id" not in attestation_cols:
+                    db.execute("ALTER TABLE run_attestations ADD COLUMN key_id TEXT")
+                if "signature_algorithm" not in attestation_cols:
+                    db.execute("ALTER TABLE run_attestations ADD COLUMN signature_algorithm TEXT")
                 if db.execute("PRAGMA foreign_keys").fetchone()[0] != 1:
                     raise RuntimeError("SQLite foreign keys are disabled")
                 required = {"job_bindings", "approval_bindings", "verification_leases", "run_attestations"}

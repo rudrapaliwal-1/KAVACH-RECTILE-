@@ -1,10 +1,12 @@
-# SENTINEL-X current generalized upgrade
+# KAVACH-X
 
-The current scan and dashboard capabilities, executed tests, setup, and limitations are documented in [GENERALIZED_UPGRADE_REPORT.md](GENERALIZED_UPGRADE_REPORT.md). The protected BOLA workflow remains the only independently verified remediation adapter.
+**Brand Tagline:** "Find the Vulnerability. Prove the Fix."  
+**Product Positioning:** AI-assisted security remediation with explicit human approval, independent verification, and inspectable evidence.
 
-# SENTINEL-X Phase 7
+*Note: The official product name is **KAVACH-X**. Internal module names, environment variables, and Docker tags retain compatibility aliases where needed.*
 
-The current implementation supports local individual accounts, secure ZIP onboarding, and one trusted Python/FastAPI BOLA verification contract. The browser can run a real Qwen-generated patch through exact-hash approval and independent Docker tests. See [RUN_PROJECT.md](RUN_PROJECT.md), [ARCHITECTURE_FINAL.md](ARCHITECTURE_FINAL.md), and [FINAL_IMPLEMENTATION_REPORT.md](FINAL_IMPLEMENTATION_REPORT.md) for current setup, trust boundaries, and execution evidence. Older phase reports below are historical snapshots.
+## Implementation & Architecture
+The current scan and dashboard capabilities, executed tests, setup, and limitations are documented in [IMPLEMENTATION_REPORT.md](IMPLEMENTATION_REPORT.md) and [TEST_REPORT.md](TEST_REPORT.md). The protected BOLA workflow provides an independently verified remediation adapter.
 
 # SENTINEL-X Phase 5 local integration
 

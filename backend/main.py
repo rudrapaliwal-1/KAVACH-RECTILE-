@@ -17,7 +17,8 @@ from .middleware import ApiGuard
 from .models import WorkflowError
 from .readiness import probe
 from .security_activity import router as security_activity_router
-from .routes import approvals, findings, jobs, verification, projects, scans, scan_patches
+from .github_integration import GitHubPRCoordinator
+from .routes import approvals, candidates, findings, github_webhooks, jobs, verification, projects, scans, scan_patches
 from .services.agent_adapter import AgentAdapter, ConfiguredAgentAdapter
 from .services.verification_adapter import ConfiguredVerificationAdapter, VerificationAdapter
 from .workflow import Workflow
@@ -45,6 +46,7 @@ def create_app(settings: Settings | None = None, agent: AgentAdapter | None = No
                         verifier or ConfiguredVerificationAdapter(settings))
     workflow.recover_interrupted()
     app.state.workflow = workflow
+    app.state.github_coordinator = GitHubPRCoordinator(db, settings, workflow)
 
     @app.get("/", include_in_schema=False)
     def index():
@@ -90,6 +92,24 @@ def create_app(settings: Settings | None = None, agent: AgentAdapter | None = No
                 "hosted_delivery_verified": False, "trace_reference": None,
                 "local_workflow_events": True}
 
+    @app.get("/api/observability/performance-metrics", tags=["observability"])
+    def get_performance_metrics():
+        from .verification_metrics import verification_metrics
+        return verification_metrics.get_summary()
+
+    @app.get("/api/observability/regression-memory", tags=["observability"])
+    def get_regression_memory(request: Request, profile: str = "", path: str = ""):
+        from .regression_memory import retrieve_relevant_memory
+        with request.app.state.workflow.db.read() as db:
+            return {"records": retrieve_relevant_memory(db, profile, path, limit=10)}
+
+    @app.post("/api/attestation/verify", tags=["attestation"])
+    def verify_attestation(payload: dict):
+        from .attestation import AttestationEngine
+        att_data = payload.get("attestation") if "attestation" in payload else payload
+        res = AttestationEngine.verify_attestation(att_data)
+        return res.to_dict()
+
     app.include_router(auth_router)
     app.include_router(projects.router)
     app.include_router(scans.router)
@@ -99,6 +119,8 @@ def create_app(settings: Settings | None = None, agent: AgentAdapter | None = No
     app.include_router(jobs.router)
     app.include_router(approvals.router)
     app.include_router(verification.router)
+    app.include_router(candidates.router)
+    app.include_router(github_webhooks.router)
     return app
 
 

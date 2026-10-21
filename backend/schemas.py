@@ -1,6 +1,6 @@
 """Strict public API and trusted adapter payloads."""
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -65,6 +65,8 @@ class VerificationResult(StrictModel):
     patch_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     source_revision: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     verification_profile: str | None = Field(default=None, max_length=128)
+    adversarial_report: dict[str, Any] | None = None
+    mutation_report: dict[str, Any] | None = None
 
     def validate_counts(self) -> None:
         if self.tests_passed + self.tests_failed != self.tests_total:
@@ -77,3 +79,65 @@ class VerificationResult(StrictModel):
             raise ValueError("passing verification requires executed tests without failures")
         if self.status == "FAILED" and self.tests_failed == 0:
             raise ValueError("failed verification requires failed tests")
+
+
+class PatchIntakeRequest(StrictModel):
+    target_app_id: str = Field(default="bola-demo-v1", min_length=1, max_length=80)
+    project_id: str | None = None
+    finding_id: str | None = None
+    finding: Finding | None = None
+    job_id: str | None = None
+    patch_text: str = Field(min_length=1, max_length=65_536)
+    authoring_source: str = Field(default="External Developer / Tool", min_length=1, max_length=128)
+    root_cause: str = Field(default="External candidate patch submission", max_length=4000)
+    explanation: str = Field(default="Candidate patch submitted for independent verification", max_length=8000)
+    claimed_source_revision: str | None = None
+    claimed_patch_hash: str | None = None
+
+
+class PatchIntakeResponse(StrictModel):
+    job_id: str
+    candidate_id: str
+    patch_hash: str
+    authoring_source: str
+    source_revision: str
+    policy_status: str
+    policy_reasons: list[str]
+    status: str
+    created_at: str
+
+
+class CandidateSummary(StrictModel):
+    job_id: str
+    candidate_id: str
+    authoring_source: str
+    status: str
+    policy_status: str
+    policy_reasons: list[str]
+    patch_hash: str
+    patch_size_bytes: int
+    files_changed: list[str]
+    additions: int
+    deletions: int
+    approval_status: str
+    approved_by: str | None = None
+    approved_at: str | None = None
+    source_revision: str
+    test_suite_id: str | None = None
+    tests_total: int | None = None
+    tests_passed: int | None = None
+    tests_failed: int | None = None
+    duration_ms: int | None = None
+    adversarial_mitigated: bool | None = None
+    adversarial_summary: dict[str, Any] | None = None
+    evidence_integrity: dict[str, Any] | None = None
+    limitations: list[str] = Field(default_factory=list)
+
+
+class ComparisonReport(StrictModel):
+    candidates: list[CandidateSummary]
+    normalized_source_revision: str | None = None
+    source_revision_mismatch: bool = False
+    test_suite_discrepancy: bool = False
+    fair_comparison_notes: list[str] = Field(default_factory=list)
+    disclaimer: str

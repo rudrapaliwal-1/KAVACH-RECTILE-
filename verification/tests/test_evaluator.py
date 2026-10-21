@@ -180,3 +180,139 @@ def test_evaluator_returns_verified_when_all_pass():
     assert result.tests_passed == 8
     assert result.tests_failed == 0
     assert result.failed_tests == []
+
+
+def test_evaluator_validates_hmac_attestation_signature():
+    import hashlib
+    import hmac
+
+    token = "secret-orchestrator-run-token-12345"
+    patch_hash = "sha256:abc123def456"
+    payload = f"8:8:0:0:0:{patch_hash}"
+    sig = hmac.new(token.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    report = json.dumps({
+        "summary": {"total": 8, "passed": 8, "failed": 0, "error": 0},
+        "tests": [{"nodeid": node, "outcome": "passed"} for node in ALL_REQUIRED_TEST_NODES],
+        "failed_tests": [],
+        "exitstatus": 0,
+        "attestation": {
+            "signature": sig,
+            "patch_hash": patch_hash,
+            "job_id": "job-001",
+        },
+    })
+    result = TestResultEvaluator.evaluate(
+        job_id="job-001",
+        patch_hash=patch_hash,
+        exit_code=0,
+        raw_output="8 passed in 0.5s",
+        report_json_str=report,
+        run_token=token,
+    )
+    assert result.status == VerificationStatus.VERIFIED.value
+    assert result.tests_passed == 8
+    assert result.execution_error is None
+
+
+def test_evaluator_rejects_missing_hmac_attestation_when_token_required():
+    token = "secret-orchestrator-run-token-12345"
+    patch_hash = "sha256:abc123def456"
+    # Report lacks attestation object
+    report = json.dumps({
+        "summary": {"total": 8, "passed": 8, "failed": 0, "error": 0},
+        "tests": [{"nodeid": node, "outcome": "passed"} for node in ALL_REQUIRED_TEST_NODES],
+        "failed_tests": [],
+        "exitstatus": 0,
+    })
+    result = TestResultEvaluator.evaluate(
+        job_id="job-001",
+        patch_hash=patch_hash,
+        exit_code=0,
+        raw_output="8 passed in 0.5s",
+        report_json_str=report,
+        run_token=token,
+    )
+    assert result.status == VerificationStatus.EXECUTION_ERROR.value
+    assert "Missing or invalid cryptographic HMAC attestation" in result.execution_error
+
+
+def test_evaluator_rejects_forged_hmac_attestation_signature():
+    token = "secret-orchestrator-run-token-12345"
+    patch_hash = "sha256:abc123def456"
+    report = json.dumps({
+        "summary": {"total": 8, "passed": 8, "failed": 0, "error": 0},
+        "tests": [{"nodeid": node, "outcome": "passed"} for node in ALL_REQUIRED_TEST_NODES],
+        "failed_tests": [],
+        "exitstatus": 0,
+        "attestation": {
+            "signature": "forged_invalid_signature_hex_00000000",
+            "patch_hash": patch_hash,
+            "job_id": "job-001",
+        },
+    })
+    result = TestResultEvaluator.evaluate(
+        job_id="job-001",
+        patch_hash=patch_hash,
+        exit_code=0,
+        raw_output="8 passed in 0.5s",
+        report_json_str=report,
+        run_token=token,
+    )
+    assert result.status == VerificationStatus.EXECUTION_ERROR.value
+    assert "Cryptographic HMAC attestation mismatch" in result.execution_error
+
+
+def test_evaluator_detects_duplicate_test_nodeid():
+    # Attempt to satisfy 8 tests by duplicating the first test 8 times
+    report = json.dumps({
+        "summary": {"total": 8, "passed": 8, "failed": 0, "error": 0},
+        "tests": [{"nodeid": ALL_REQUIRED_TEST_NODES[0], "outcome": "passed"} for _ in range(8)],
+        "failed_tests": [],
+    })
+    result = TestResultEvaluator.evaluate(
+        job_id="job-001",
+        patch_hash="hash123",
+        exit_code=0,
+        raw_output="8 passed",
+        report_json_str=report,
+    )
+    assert result.status == VerificationStatus.EXECUTION_ERROR.value
+    assert "Duplicate test node ID" in result.execution_error
+
+
+def test_evaluator_detects_test_nodeid_outside_protected_tests():
+    # Attacker crafts tests outside protected_tests directory
+    report = json.dumps({
+        "summary": {"total": 8, "passed": 8, "failed": 0, "error": 0},
+        "tests": [{"nodeid": f"untrusted_external_tests/test.py::test_{i}", "outcome": "passed"} for i in range(8)],
+        "failed_tests": [],
+    })
+    result = TestResultEvaluator.evaluate(
+        job_id="job-001",
+        patch_hash="hash123",
+        exit_code=0,
+        raw_output="8 passed",
+        report_json_str=report,
+    )
+    assert result.status == VerificationStatus.EXECUTION_ERROR.value
+    assert "outside protected test suite" in result.execution_error
+
+
+def test_evaluator_detects_stdout_contradiction_when_pytest_did_not_run():
+    # Report claims 8 passed, but stdout was empty or fake
+    report = json.dumps({
+        "summary": {"total": 8, "passed": 8, "failed": 0, "error": 0},
+        "tests": [{"nodeid": node, "outcome": "passed"} for node in ALL_REQUIRED_TEST_NODES],
+        "failed_tests": [],
+    })
+    result = TestResultEvaluator.evaluate(
+        job_id="job-001",
+        patch_hash="hash123",
+        exit_code=0,
+        raw_output="Process terminated early with fake output",
+        report_json_str=report,
+    )
+    assert result.status == VerificationStatus.EXECUTION_ERROR.value
+    assert "Standard output log contradicts reported all-passing status" in result.execution_error
+

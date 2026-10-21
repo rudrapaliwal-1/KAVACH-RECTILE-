@@ -1,0 +1,519 @@
+/* ==========================================================================
+   KAVACH-X — MINIMALIST "SECURITY CORE" BOOT SCREEN
+   Deep Indigo: #171025 | Soft Lavender: #B9A7E8 | Lime Accent: #B7F36B
+   ========================================================================== */
+
+.bootRoot {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  background-color: #171025;
+  color: #F4F0E8;
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  user-select: none;
+  overflow: hidden;
+  padding: 40px 24px;
+  box-sizing: border-box;
+}
+
+/* Background Atmosphere */
+.ambientBackground {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(183, 243, 107, 0.07) 0%, rgba(41, 33, 60, 0.5) 45%, #171025 85%);
+}
+
+.subtleGrid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(185, 167, 232, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(185, 167, 232, 0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+  background-position: center center;
+  opacity: 0.6;
+}
+
+/* Top Action Header */
+.topHeader {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-width: 1080px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.skipButton {
+  background: rgba(41, 33, 60, 0.6);
+  border: 1px solid rgba(185, 167, 232, 0.2);
+  color: #B9A7E8;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(8px);
+}
+
+.skipButton:hover {
+  background: rgba(183, 243, 107, 0.15);
+  border-color: #B7F36B;
+  color: #B7F36B;
+}
+
+/* Center Content Composition */
+.centerComposition {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin-top: auto;
+  margin-bottom: auto;
+  max-width: 720px;
+  width: 100%;
+}
+
+/* Brand Wordmark */
+.brandWordmark {
+  margin-bottom: 24px;
+}
+
+.wordmarkTitle {
+  font-family: 'Plus Jakarta Sans', 'Space Grotesk', sans-serif;
+  font-size: clamp(32px, 4vw, 44px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: #F4F0E8;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.limeAccent {
+  color: #B7F36B;
+  text-shadow: 0 0 20px rgba(183, 243, 107, 0.5);
+}
+
+.wordmarkSubtitle {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.28em;
+  color: #ABA5BA;
+  margin-top: 8px;
+  text-transform: uppercase;
+}
+
+.subLime {
+  color: #B7F36B;
+  font-weight: 700;
+}
+
+/* ==========================================================================
+   SECURITY CORE (3-LAYER FLOATING GLASS STRUCTURE)
+   ========================================================================== */
+.coreWrapper {
+  position: relative;
+  width: 360px;
+  height: 220px;
+  margin: 10px 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.orbitalSvg {
+  position: absolute;
+  width: 520px;
+  height: 260px;
+  top: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.nodeGlow {
+  filter: drop-shadow(0 0 4px #B7F36B);
+}
+
+.nodeGlowPulse {
+  filter: drop-shadow(0 0 8px #B7F36B);
+  animation: pulseNode 2s infinite ease-in-out;
+}
+
+@keyframes pulseNode {
+  0%, 100% { opacity: 0.6; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+.isometricStage {
+  position: relative;
+  width: 220px;
+  height: 140px;
+  perspective: 900px;
+  transform-style: preserve-3d;
+  z-index: 2;
+}
+
+.glassLayer {
+  position: absolute;
+  width: 220px;
+  height: 120px;
+  left: 0;
+  top: 10px;
+  border-radius: 18px;
+  transform: rotateX(60deg) rotateZ(-30deg);
+  transform-style: preserve-3d;
+  transition: transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+  box-sizing: border-box;
+}
+
+/* Top Glass Pane */
+.topLayer {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.12) 0%, rgba(185, 167, 232, 0.06) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.4),
+    inset 0 1px 1px rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(4px);
+  transform: rotateX(60deg) rotateZ(-30deg) translateZ(50px);
+  animation: floatTop 4s ease-in-out infinite;
+}
+
+.glassReflection {
+  position: absolute;
+  inset: 0;
+  border-radius: 18px;
+  background: linear-gradient(105deg, rgba(255, 255, 255, 0.25) 0%, transparent 40%);
+  pointer-events: none;
+}
+
+.layerGlowRim {
+  position: absolute;
+  inset: 0;
+  border-radius: 18px;
+  box-shadow: inset 0 0 12px rgba(183, 243, 107, 0.18);
+  pointer-events: none;
+}
+
+/* Middle Glass Pane with Circuit Lines */
+.midLayer {
+  background: linear-gradient(135deg, rgba(41, 33, 60, 0.5) 0%, rgba(23, 16, 37, 0.7) 100%);
+  border: 1px solid rgba(185, 167, 232, 0.3);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(6px);
+  transform: rotateX(60deg) rotateZ(-30deg) translateZ(10px);
+  overflow: hidden;
+  animation: floatMid 4s ease-in-out infinite;
+}
+
+.circuitMatrix {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(185, 167, 232, 0.15) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(185, 167, 232, 0.15) 1px, transparent 1px);
+  background-size: 14px 14px;
+  opacity: 0.5;
+}
+
+/* Scanning Light Beam */
+.scanBeam {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 40px;
+  background: linear-gradient(90deg, transparent, rgba(183, 243, 107, 0.8), transparent);
+  filter: blur(2px);
+  animation: scanAcross 3s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes scanAcross {
+  0% { transform: translateX(-50px); opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { transform: translateX(250px); opacity: 0; }
+}
+
+/* Bottom Glass Pane / Foundation */
+.botLayer {
+  background: rgba(23, 16, 37, 0.85);
+  border: 1px solid rgba(183, 243, 107, 0.4);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.8),
+    0 0 20px rgba(183, 243, 107, 0.25);
+  transform: rotateX(60deg) rotateZ(-30deg) translateZ(-30px);
+  animation: floatBot 4s ease-in-out infinite;
+}
+
+.pedestalEdge {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #B7F36B;
+  box-shadow: 0 0 10px #B7F36B;
+}
+
+/* Central Glowing Shield */
+.centralShieldContainer {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 64px;
+  height: 74px;
+  margin-left: -32px;
+  margin-top: -37px;
+  z-index: 10;
+  transform: translateZ(45px);
+  transform-style: preserve-3d;
+  animation: floatShield 3.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.shieldAura {
+  position: absolute;
+  inset: -12px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(183, 243, 107, 0.35) 0%, transparent 70%);
+  filter: blur(8px);
+  animation: auraPulse 2.5s ease-in-out infinite;
+}
+
+.shieldSvg {
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 0 10px rgba(183, 243, 107, 0.6));
+}
+
+@keyframes floatTop {
+  0%, 100% { transform: rotateX(60deg) rotateZ(-30deg) translateZ(52px); }
+  50% { transform: rotateX(60deg) rotateZ(-30deg) translateZ(46px); }
+}
+
+@keyframes floatMid {
+  0%, 100% { transform: rotateX(60deg) rotateZ(-30deg) translateZ(10px); }
+  50% { transform: rotateX(60deg) rotateZ(-30deg) translateZ(12px); }
+}
+
+@keyframes floatBot {
+  0%, 100% { transform: rotateX(60deg) rotateZ(-30deg) translateZ(-30px); }
+  50% { transform: rotateX(60deg) rotateZ(-30deg) translateZ(-32px); }
+}
+
+@keyframes floatShield {
+  0%, 100% { transform: translateZ(46px) translateY(-3px); }
+  50% { transform: translateZ(42px) translateY(3px); }
+}
+
+@keyframes auraPulse {
+  0%, 100% { opacity: 0.5; transform: scale(0.95); }
+  50% { opacity: 0.9; transform: scale(1.15); }
+}
+
+/* Supporting Initializing Text */
+.initLabel {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  color: #B9A7E8;
+  margin-bottom: 24px;
+  text-transform: uppercase;
+}
+
+/* ==========================================================================
+   REAL READINESS TRACKER
+   ========================================================================== */
+.readinessTracker {
+  width: 100%;
+  max-width: 680px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+  margin-bottom: 18px;
+}
+
+.checkNode {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  z-index: 2;
+  flex: 1;
+  text-align: center;
+}
+
+.nodeIconWrapper {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #110B1E;
+  border: 1px solid rgba(185, 167, 232, 0.3);
+  display: grid;
+  place-items: center;
+  transition: all 0.3s ease;
+}
+
+.nodeIconWrapper.ready {
+  border-color: #B7F36B;
+  background: rgba(183, 243, 107, 0.15);
+  color: #B7F36B;
+  box-shadow: 0 0 10px rgba(183, 243, 107, 0.4);
+}
+
+.nodeIconWrapper.pending {
+  border-color: #B9A7E8;
+  color: #B9A7E8;
+}
+
+.nodeIconWrapper.failed {
+  border-color: #FF7A70;
+  background: rgba(255, 122, 112, 0.15);
+  color: #FF7A70;
+  box-shadow: 0 0 8px rgba(255, 122, 112, 0.4);
+}
+
+.nodeTitle {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #ABA5BA;
+  white-space: nowrap;
+}
+
+.nodeConnector {
+  flex: 1;
+  height: 2px;
+  background: rgba(185, 167, 232, 0.2);
+  margin-top: -18px;
+  z-index: 1;
+  transition: background 0.3s ease;
+}
+
+.nodeConnector.active {
+  background: linear-gradient(90deg, #B7F36B, rgba(183, 243, 107, 0.4));
+}
+
+/* Status Message & Action Row */
+.statusFeedback {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+}
+
+.feedbackText {
+  font-size: 12px;
+  color: #ABA5BA;
+  max-width: 580px;
+  line-height: 1.5;
+}
+
+.feedbackText strong {
+  color: #F4F0E8;
+}
+
+.feedbackActions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.actionButtonLime {
+  background: #B7F36B;
+  color: #110B1E;
+  border: none;
+  border-radius: 999px;
+  padding: 8px 18px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: transform 0.18s, box-shadow 0.18s;
+}
+
+.actionButtonLime:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(183, 243, 107, 0.4);
+}
+
+.actionButtonSecondary {
+  background: rgba(41, 33, 60, 0.8);
+  border: 1px solid rgba(185, 167, 232, 0.3);
+  color: #F4F0E8;
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.18s;
+}
+
+.actionButtonSecondary:hover {
+  border-color: #B9A7E8;
+  background: rgba(56, 46, 82, 0.9);
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+  .readinessTracker {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .nodeConnector {
+    display: none;
+  }
+  .coreWrapper {
+    transform: scale(0.85);
+  }
+  .wordmarkTitle {
+    font-size: 28px;
+  }
+}
+
+/* Reduced Motion Mode */
+@media (prefers-reduced-motion: reduce) {
+  .topLayer,
+  .midLayer,
+  .botLayer,
+  .centralShieldContainer,
+  .shieldAura,
+  .scanBeam,
+  .nodeGlowPulse {
+    animation: none !important;
+    transition: none !important;
+  }
+  .scanBeam {
+    display: none;
+  }
+}

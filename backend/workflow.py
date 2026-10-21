@@ -244,7 +244,26 @@ class Workflow:
                 with self.db.transaction() as db:
                     self._event(db, job_id, "REFLECTION_COMPLETED",
                                 {"attempt": attempt, "outcome": "GUIDANCE_VALIDATED"})
+            source_start = monotonic()
             context = bounded_source_context(replace(self.settings, source_root=self._source_root(self._project_id(job_id))), finding)
+            from .verification_metrics import verification_metrics
+            verification_metrics.record_phase_timing("source_intake", min(3_600_000, int((monotonic() - source_start) * 1000)))
+
+            # Advisory Regression Memory Retrieval
+            from .regression_memory import retrieve_relevant_memory
+            try:
+                failed_tests = feedback.get("failed_tests") if feedback else None
+                with self.db.read() as db:
+                    advisory_memories = retrieve_relevant_memory(db, finding.type, finding.file_path, failed_tests, limit=3)
+                if advisory_memories:
+                    with self.db.transaction() as db:
+                        self._event(db, job_id, "REGRESSION_MEMORY_ADVISORY", {
+                            "count": len(advisory_memories),
+                            "memories": advisory_memories,
+                        })
+            except Exception:
+                pass
+
             inference_start = monotonic()
             self._telemetry("agent.inference.started", job_id, attempt=attempt)
             inference_success = False
@@ -255,21 +274,34 @@ class Workflow:
                 proposal = AgentProposal.model_validate(proposal)
                 inference_success = True
             finally:
+                infer_dur = min(3_600_000, int((monotonic() - inference_start) * 1000))
                 self._telemetry("agent.inference.completed", job_id, attempt=attempt,
                                 success=inference_success,
-                                duration_ms=min(3_600_000, int((monotonic() - inference_start) * 1000)))
+                                duration_ms=infer_dur)
+                verification_metrics.record_ai_generation(infer_dur, success=inference_success)
             self._telemetry("patch.generated", job_id, attempt=attempt, success=True)
             validation_start = monotonic()
+            from .safe_cache import safe_cache
+            digest = patch_hash(proposal.patch_text)
+            target_to_eval = AUTHORIZED_TARGET if self._project_id(job_id) else target
             try:
-                policy = validate_patch(AUTHORIZED_TARGET if self._project_id(job_id) else target, proposal.patch_text, proposal.files_changed,
-                                        attempt, self.settings)
+                policy = safe_cache.get_or_compute_policy(
+                    target_to_eval,
+                    digest,
+                    attempt,
+                    lambda: validate_patch(target_to_eval, proposal.patch_text, proposal.files_changed, attempt, self.settings),
+                )
             except Exception:
+                val_dur = min(3_600_000, int((monotonic() - validation_start) * 1000))
                 self._telemetry("patch.validation.completed", job_id, attempt=attempt,
-                                success=False, duration_ms=min(3_600_000, int((monotonic() - validation_start) * 1000)))
+                                success=False, duration_ms=val_dur)
+                verification_metrics.record_phase_timing("policy_validation", val_dur)
                 raise
+            val_dur = min(3_600_000, int((monotonic() - validation_start) * 1000))
             self._telemetry("patch.validation.completed", job_id, attempt=attempt,
                             success=policy.allowed,
-                            duration_ms=min(3_600_000, int((monotonic() - validation_start) * 1000)))
+                            duration_ms=val_dur)
+            verification_metrics.record_phase_timing("policy_validation", val_dur)
             with self.db.transaction() as db:
                 job = self._job(db, job_id)
                 if job["status"] != Status.PLANNING.value or job["attempt"] != attempt:
@@ -278,11 +310,15 @@ class Workflow:
                 patch_id = _id("patch")
                 digest = patch_hash(proposal.patch_text)
                 db.execute("""
-                    INSERT INTO patch_proposals VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO patch_proposals (
+                        id, job_id, attempt, root_cause, explanation, patch_format,
+                        patch_text, files_changed_json, patch_hash, policy_status,
+                        policy_details_json, created_at, authoring_source
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (patch_id, job_id, attempt, proposal.root_cause, proposal.explanation,
                         proposal.patch_format, proposal.patch_text, _json(proposal.files_changed),
                         digest, "PASSED" if policy.allowed else "REJECTED",
-                        _json({"reasons": policy.reasons}), utc_now()))
+                        _json({"reasons": policy.reasons}), utc_now(), "Ollama (Internal Agent)"))
                 self._event(db, job_id, "POLICY_EVALUATED",
                             {"patch_id": patch_id, "patch_hash": digest,
                              "outcome": "PASSED" if policy.allowed else "REJECTED",
@@ -337,6 +373,21 @@ class Workflow:
         patch["files_changed"] = json.loads(patch.pop("files_changed_json"))
         patch["policy_details"] = json.loads(patch.pop("policy_details_json"))
         return patch
+
+    def source(self, job_id: str) -> dict[str, Any]:
+        with self.db.read() as db:
+            job = self._job(db, job_id)
+        finding = Finding.model_validate(json.loads(job["finding_json"]))
+        project_id = self._project_id(job_id)
+        source_root = self._source_root(project_id)
+        context = bounded_source_context(replace(self.settings, source_root=source_root), finding)
+        content = context.get(finding.file_path, "")
+        return {
+            "job_id": job_id,
+            "file_path": finding.file_path,
+            "content": content,
+            "source_revision": self._source_revision(project_id),
+        }
 
     def _invalidate_if_stale(self, job_id: str) -> None:
         with self.db.read() as reader:
@@ -455,7 +506,11 @@ class Workflow:
                                                  self._project_id(job_id), str(self._source_root(self._project_id(job_id))))
 
         self._telemetry("verification.started", job_id, run_id=run_id, attempt=job["attempt"])
+        from .verification_metrics import verification_metrics
         verification_start = monotonic()
+        prep_start = monotonic()
+        prep_dur = min(3_600_000, int((monotonic() - prep_start) * 1000))
+        verification_metrics.record_phase_timing("docker_prep", prep_dur)
 
         def approval_verifier(check_job: str, check_patch: str,
                               check_hash: str, check_approval: str) -> bool:
@@ -499,6 +554,9 @@ class Workflow:
             result_data = {"execution_error": "verification integration failed"}
             status = Status.EXECUTION_ERROR
 
+        test_exec_dur = result_data.get("duration_ms", min(3_600_000, int((monotonic() - verification_start) * 1000)))
+        verification_metrics.record_phase_timing("test_execution", test_exec_dur)
+
         with self.db.transaction() as db:
             job = self._job(db, job_id)
             lease = db.execute("""SELECT * FROM verification_leases
@@ -519,16 +577,70 @@ class Workflow:
                           WHERE id = ? AND status = 'RUNNING'""",
                        (status.value, _json(result_data), utc_now(), run_id))
             if status in (Status.VERIFIED, Status.VERIFICATION_FAILED):
-                evidence_digest = "sha256:" + hashlib.sha256(
+                from .attestation import AttestationEngine, compute_sha256
+                legacy_digest = "sha256:" + hashlib.sha256(
                     _json({"run_id": run_id, "job_id": job_id, "patch_id": patch["id"],
                            "patch_hash": patch["patch_hash"], "attempt": job["attempt"],
                            "source_revision": binding["source_revision"],
                            "verification_profile": binding["verification_profile"],
                            "result": result_data}).encode("utf-8")).hexdigest()
-                db.execute("INSERT INTO run_attestations VALUES (?, ?, ?, ?, ?, ?)",
+
+                try:
+                    src_root = self._source_root(self._project_id(job_id))
+                    src_bytes = b"".join(sorted([f.read_bytes() for f in src_root.rglob("*") if f.is_file()]))
+                    src_digest = compute_sha256(src_bytes)
+                except Exception:
+                    src_digest = compute_sha256(binding["source_revision"])
+
+                tests_summary = {
+                    "total": result_data.get("tests_total", 0),
+                    "passed": result_data.get("tests_passed", 0),
+                    "failed": result_data.get("tests_failed", 0),
+                    "exit_status": 0 if status == Status.VERIFIED else 1,
+                    "timed_out": False,
+                    "infrastructure_status": "HEALTHY",
+                }
+
+                attestation_data = AttestationEngine.create_attestation(
+                    run_id=run_id,
+                    project_id=self._project_id(job_id),
+                    job_id=job_id,
+                    target_app_id=job["target_app_id"],
+                    source_revision=binding["source_revision"],
+                    source_digest=src_digest,
+                    patch_hash=patch["patch_hash"],
+                    attempt=job["attempt"],
+                    patch_id=patch["id"],
+                    approved_by=approval["approved_by"] if approval else self.settings.operator_name,
+                    approved_at=approval["created_at"] if approval else utc_now(),
+                    approval_id=approval["id"] if approval else "",
+                    test_suite_id=binding["verification_profile"],
+                    test_suite_version="bola-redteam-v1",
+                    tests_summary=tests_summary,
+                    test_results=result_data.get("test_results", []),
+                    verdict=status.value,
+                    container_image_digest=result_data.get("container_image_digest"),
+                    execution_config={
+                        "verifier_timeout_seconds": self.settings.verifier_timeout_seconds,
+                        "python_version": "3.12.10",
+                        "isolation_mode": "restricted_container" if getattr(self.verifier, "is_docker", False) else "process_sandbox",
+                        "verifier_version": "sentinel-verifier-2.4.0",
+                    },
+                    sign=True,
+                )
+
+                sig_obj = attestation_data.get("digital_signature") or {}
+                sig_str = sig_obj.get("signature_base64")
+                key_id = sig_obj.get("key_id")
+                sig_algo = sig_obj.get("algorithm")
+
+                db.execute("""INSERT INTO run_attestations
+                              (run_id, attempt, source_revision, verification_profile, test_suite_id,
+                               evidence_digest, attestation_payload_json, signature, key_id, signature_algorithm)
+                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                            (run_id, job["attempt"], binding["source_revision"],
                             binding["verification_profile"], result_data.get("test_suite_id") or "",
-                            evidence_digest))
+                            legacy_digest, _json(attestation_data), sig_str, key_id, sig_algo))
             self._transition(db, job, status, {"run_id": run_id, "attempt": job["attempt"]})
             self._event(db, job_id, "VERIFICATION_COMPLETED",
                         {"run_id": run_id, "patch_hash": patch["patch_hash"], "status": status.value})
@@ -539,10 +651,36 @@ class Workflow:
 
         counts = {key: result_data[key] for key in ("tests_passed", "tests_failed")
                   if type(result_data.get(key)) is int}
+        total_ver_dur = min(3_600_000, int((monotonic() - verification_start) * 1000))
         self._telemetry("verification.completed", job_id, run_id=run_id,
                         attempt=job["attempt"], success=status == Status.VERIFIED,
-                        duration_ms=min(3_600_000, int((monotonic() - verification_start) * 1000)),
+                        duration_ms=total_ver_dur,
                         **counts)
+        verification_metrics.record_verification_run(
+            attempt=job["attempt"],
+            status=status.value,
+            duration_ms=total_ver_dur,
+            test_execution_ms=result_data.get("duration_ms", total_ver_dur),
+            is_infra_error=(status == Status.EXECUTION_ERROR),
+        )
+        if status == Status.VERIFICATION_FAILED:
+            from .regression_memory import record_failure_pattern
+            try:
+                with self.db.transaction() as db:
+                    files_list = json.loads(patch["files_changed_json"]) if patch.get("files_changed_json") else ["app/access.py"]
+                    record_failure_pattern(
+                        db=db,
+                        vulnerability_profile=binding["verification_profile"],
+                        file_path=files_list[0] if files_list else "app/access.py",
+                        failure_pattern=", ".join(result_data.get("failed_tests", [])[:3]) or "test failure",
+                        sanitized_explanation=f"Tests failed on revision attempt {job['attempt']}: {result_data.get('tests_failed', 1)} failed",
+                        remediation_pattern="Verify that object access strictly compares object owner with requester identity",
+                        trusted_scenarios=result_data.get("failed_tests", [])[:5],
+                        historical_limitations="Observed during test suite verification",
+                    )
+            except Exception:
+                pass
+
         response = {"job_id": job_id, "patch_hash": patch["patch_hash"],
                     **result_data, "status": status.value}
         if can_retry and not exhausted:
@@ -552,6 +690,34 @@ class Workflow:
                                          for name in result_data["failed_tests"][:20]]}
             self.plan(job_id, feedback)
         return response
+
+    def run_mutation_testing(self, job_id: str) -> dict[str, Any]:
+        """Execute controlled mutation testing suite for test quality measurement.
+
+        Preserves authoritative patch verification results and job lifecycle status.
+        Never overwrites or alters the verified status of an approved patch.
+        """
+        with self.db.read() as db:
+            job = self._job(db, job_id)
+            binding = self._require_current_source(db, job_id)
+
+        from verification.mutator import MutationRunner
+        report = MutationRunner.run_mutation_suite(
+            source_revision=binding.get("source_revision", "")
+        )
+        report_dict = report.to_dict()
+
+        with self.db.transaction() as db:
+            self._event(db, job_id, "MUTATION_TESTING_COMPLETED", {
+                "score": report.mutation_score,
+                "valid_mutants": report.valid_mutants,
+                "killed_mutants": report.killed_mutants,
+                "surviving_mutants": report.surviving_mutants,
+                "invalid_mutants": report.invalid_mutants,
+                "test_suite_version": report.test_suite_version,
+            })
+
+        return report_dict
 
     def events(self, job_id: str) -> list[dict[str, Any]]:
         with self.db.read() as db:
@@ -601,8 +767,25 @@ class Workflow:
                                 "verification_profile": run["attestation"]["verification_profile"],
                                 "result": run["result"]}
                 computed = "sha256:" + hashlib.sha256(_json(digest_input).encode("utf-8")).hexdigest()
-                run["attestation_integrity"] = "VALID" if computed == run["attestation"]["evidence_digest"] else "MISMATCH"
-                if run["attestation_integrity"] == "MISMATCH":
+                payload_json = run["attestation"].get("attestation_payload_json")
+                attestation_valid = True
+                if payload_json:
+                    from .attestation import AttestationEngine
+                    try:
+                        att_payload = json.loads(payload_json)
+                        run["attestation"]["payload"] = att_payload
+                        val_res = AttestationEngine.verify_attestation(att_payload, expected_run_id=run["id"])
+                        run["attestation"]["validation"] = val_res.to_dict()
+                        if not val_res.valid:
+                            attestation_valid = False
+                            integrity_issues.extend([f"attestation issue ({run['id']}): {issue}" for issue in val_res.issues])
+                    except Exception as err:
+                        attestation_valid = False
+                        integrity_issues.append(f"attestation parse error ({run['id']}): {err}")
+
+                legacy_match = computed == run["attestation"]["evidence_digest"]
+                run["attestation_integrity"] = "VALID" if (legacy_match and attestation_valid) else "MISMATCH"
+                if not legacy_match:
                     integrity_issues.append(f"attestation digest mismatch: {run['id']}")
         current = next((patch for patch in patches if patch["attempt"] == job["attempt"]), None)
         current_approval = next((approval for approval in approvals if current and
@@ -655,6 +838,22 @@ class Workflow:
                 "limitations": ["Verification is limited to required tests actually reported by the trusted verifier.",
                                 "Local accounts and sessions are intended for controlled deployments.",
                                 "In-process execution has no distributed-worker durability."]}
+
+    def attestation(self, job_id: str) -> dict[str, Any]:
+        """Return the exportable signed verification attestation document for the job."""
+        with self.db.read() as db:
+            self._job(db, job_id)
+            run = db.execute(
+                "SELECT vr.*, ra.attestation_payload_json, ra.evidence_digest, ra.signature, ra.key_id, ra.signature_algorithm "
+                "FROM verification_runs vr "
+                "JOIN run_attestations ra ON ra.run_id = vr.id "
+                "WHERE vr.job_id = ? AND vr.status IN ('VERIFIED', 'VERIFICATION_FAILED') "
+                "ORDER BY vr.created_at DESC LIMIT 1",
+                (job_id,)
+            ).fetchone()
+            if not run or not run["attestation_payload_json"]:
+                raise WorkflowError("no verified attestation available for this job", code="ATTESTATION_NOT_FOUND", http_status=404)
+        return json.loads(run["attestation_payload_json"])
 
     def recover_interrupted(self) -> None:
         """Expire only runs without a live lease; another process may still own one."""

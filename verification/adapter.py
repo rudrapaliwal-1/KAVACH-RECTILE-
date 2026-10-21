@@ -185,5 +185,7 @@ def verify_backend_patch(
             "patch_hash": result.patch_hash,
             "source_revision": source_revision,
             "verification_profile": profile,
+            "adversarial_report": result.adversarial_report,
+            "mutation_report": result.mutation_report,
         }
     return _error("Verifier reported policy or execution failure.", duration)

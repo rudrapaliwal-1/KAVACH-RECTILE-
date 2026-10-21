@@ -79,6 +79,11 @@ class PatchValidator:
         (re.compile(r"\bsocket\s*\."), "Forbidden network socket operations detected"),
         (re.compile(r"\bpytest\.skip"), "Forbidden test skip directive detected"),
         (re.compile(r"@pytest\.mark\.skip"), "Forbidden test skip decorator detected"),
+        (re.compile(r"\bos\._exit\s*\("), "Forbidden call to os._exit detected"),
+        (re.compile(r"\bsys\.exit\s*\("), "Forbidden call to sys.exit detected"),
+        (re.compile(r"\bVERIFICATION_REPORT_PATH\b"), "Forbidden access to verification report path detected"),
+        (re.compile(r"\btest_report\.json\b"), "Forbidden access to verification test report detected"),
+        (re.compile(r"\bctypes\b"), "Forbidden ctypes access detected"),
     ]
 
     _DIFF_HEADER_REGEX = re.compile(r"^diff --git a/(\S+) b/(\S+)$", re.MULTILINE)

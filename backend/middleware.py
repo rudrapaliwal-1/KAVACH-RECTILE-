@@ -9,7 +9,13 @@ from .auth import COOKIE, csrf_valid, identity_kind, principal, session_user
 from .models import WorkflowError
 
 correlation_id: ContextVar[str | None] = ContextVar("sentinel_correlation_id", default=None)
-PUBLIC = frozenset({"/api/auth/register", "/api/auth/login"})
+PUBLIC = frozenset({
+    "/api/auth/register",
+    "/api/auth/login",
+    "/api/attestation/verify",
+    "/api/jobs/attestation/verify",
+    "/api/webhooks/github",
+})
 SAFE = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
@@ -77,7 +83,7 @@ class ApiGuard:
             if method in SAFE:
                 await self.app(scope, receive, secure_send)
                 return
-            limits = 12 * 1024 * 1024 if path.startswith("/api/projects/") and (path.endswith("/upload") or path.endswith("/upload-file")) else self.settings.max_request_bytes
+            limits = 64 * 1024 * 1024 if path.startswith("/api/projects/") and (path.endswith("/upload") or path.endswith("/upload-file")) else (1024 * 1024 if path == "/api/webhooks/github" else self.settings.max_request_bytes)
             lengths = [v for k, v in headers if k.lower() == b"content-length"]
             if len(lengths) > 1:
                 await reply(400, "invalid content length", "INVALID_REQUEST")

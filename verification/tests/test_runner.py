@@ -87,6 +87,7 @@ def test_reject_protected_file_patch():
     assert "protected file" in result.execution_error
 
 
+@pytest.mark.docker
 def test_docker_runner_incomplete_patch_fails_security_tests():
     """Phase 8: Real Docker execution of incomplete patch fixture."""
     patch_hash = PatchValidator.compute_hash(INCOMPLETE_PATCH)
@@ -108,6 +109,7 @@ def test_docker_runner_incomplete_patch_fails_security_tests():
     assert result.execution_error is None
 
 
+@pytest.mark.docker
 def test_docker_runner_correct_patch_verifies_successfully():
     """Phase 8: Real Docker execution of correct patch fixture."""
     patch_hash = PatchValidator.compute_hash(CORRECT_PATCH)
