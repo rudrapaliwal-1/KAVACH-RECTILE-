@@ -18,7 +18,7 @@ from .models import WorkflowError
 from .readiness import probe
 from .security_activity import router as security_activity_router
 from .github_integration import GitHubPRCoordinator
-from .routes import approvals, candidates, findings, github_webhooks, jobs, verification, projects, scans, scan_patches
+from .routes import approvals, candidates, findings, github_webhooks, jobs, verification, projects, scans, scan_patches, vibeci
 from .services.agent_adapter import AgentAdapter, ConfiguredAgentAdapter
 from .services.verification_adapter import ConfiguredVerificationAdapter, VerificationAdapter
 from .workflow import Workflow
@@ -121,6 +121,7 @@ def create_app(settings: Settings | None = None, agent: AgentAdapter | None = No
     app.include_router(verification.router)
     app.include_router(candidates.router)
     app.include_router(github_webhooks.router)
+    app.include_router(vibeci.router)
     return app
 
 

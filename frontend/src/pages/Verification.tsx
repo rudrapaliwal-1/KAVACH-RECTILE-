@@ -6,6 +6,7 @@ import { api, verificationFromEvidence } from "../api/jobs";
 import type { VerificationResult } from "../api/types";
 import { useJobs } from "../hooks/useJobs";
 import StatusBadge from "../components/StatusBadge";
+import VibeCIPanel from "../components/VibeCIPanel";
 
 interface PerformanceMetrics {
   total_runs: number;
@@ -459,6 +460,19 @@ export default function Verification() {
             </table>
           </div>
         )}
+      </section>
+ 
+      {/* VibeCI Multi-Layer Verification & Pre-Flight Console */}
+      <section className="panel" style={{ marginTop: 20 }}>
+        <div className="panel-heading">
+          <div>
+            <div className="eyebrow">DEVELOPMENT VERIFICATION // LOCAL ENGINE</div>
+            <h2>VibeCI Multi-Layer Preflight &amp; Verification</h2>
+          </div>
+        </div>
+        <div style={{ padding: "18px 24px" }}>
+          <VibeCIPanel />
+        </div>
       </section>
 
       {/* Advisory Python Patch Checks */}

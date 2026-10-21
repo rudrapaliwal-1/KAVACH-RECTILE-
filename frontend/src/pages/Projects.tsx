@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Upload, FolderGit2, Trash2, Search, FileCode2, Sparkles, RefreshCw,
-  Play, CheckCircle2, ShieldAlert, ArrowRight, ExternalLink
+  Play, CheckCircle2, ShieldAlert, ShieldCheck, ArrowRight, ExternalLink
 } from "lucide-react";
 import { apiBaseUrl, getCsrfToken, request } from "../api/client";
 import { api } from "../api/jobs";
@@ -514,6 +514,13 @@ export default function Projects() {
               >
                 <Play size={13} /> Start static security scan
               </button>
+              <Link
+                to="/verification"
+                className="button button-ghost"
+                style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+              >
+                <ShieldCheck size={13} /> VibeCI Preflight &amp; Verification
+              </Link>
             </div>
 
             {selected.status === "SUPPORTED_BOLA_CONTRACT" && (

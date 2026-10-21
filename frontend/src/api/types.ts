@@ -367,3 +367,57 @@ export interface CandidatePatch {
   files_changed: string[];
   created_at: string;
 }
+
+export interface VibeCICheckResult {
+  name: string;
+  layer: string;
+  type: string;
+  command: string;
+  status: "passed" | "failed" | "warning" | "not_checked" | "skipped" | "timed_out" | "error";
+  exit_code?: number;
+  duration_ms: number;
+  summary: string;
+  failure_details: string[];
+  file_locations: { file: string; line?: number; column?: number; message?: string }[];
+  stdout?: string;
+  stderr?: string;
+}
+
+export interface VibeCIUnverifiedCapability {
+  name: string;
+  reason: string;
+}
+
+export interface VibeCIReport {
+  run_id?: string;
+  project_id?: string;
+  run_type?: string;
+  vibeci_version: string;
+  status: "passed" | "failed" | "warnings" | "incomplete";
+  project_name: string;
+  project_type: string;
+  timestamp: string;
+  total_duration_ms: number;
+  summary: {
+    total: number;
+    passed: number;
+    failed: number;
+    warnings: number;
+    timed_out: number;
+    not_checked: number;
+  };
+  incomplete_reason?: string;
+  checks: VibeCICheckResult[];
+  unverified_capabilities: VibeCIUnverifiedCapability[];
+  created_at?: string;
+}
+
+export interface VibeCIStatus {
+  service: string;
+  version: string;
+  available: boolean;
+  available_layers: string[];
+  detected_tools: Record<string, boolean>;
+  default_timeout_seconds: number;
+  max_timeout_seconds: number;
+}

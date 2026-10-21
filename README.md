@@ -59,3 +59,22 @@ PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest agent/tests backend/tests v
 ```
 
 The fixture integration test in `agent/tests/test_fixture_integration.py` uses named fixture diffs to exercise wiring and real Docker verification. It does not test model quality. Hosted Neatlogs export requires `NEATLOGS_API_KEY` and a separate authenticated Doctor probe.
+
+## VibeCI Local Verification & Preflight
+KAVACH-X integrates the verified capabilities of **VibeCI** (MIT License, created by Piyush Kumar) as a modular, local development-quality and security preflight verification engine.
+
+### Capabilities:
+- **Layer 1: Static Health & Preflight:** Secret scanning across 13 credential formats, environment variable audit against `.env.example`, serverless platform limits, and linters/typecheckers.
+- **Layer 2: Production Build Verification:** Automated build bundle testing (`npm run build`, `uv build`).
+- **Layer 3: Existing Unit Tests:** Discover and run `pytest`, `vitest`, `jest`, `bun test`.
+- **Layer 4: Runtime Smoke Testing:** Background process boot & HTTP readiness probing.
+- **Layer 5: Honest Unverified Accounting:** Clear documentation of software boundaries that remain unverified (e.g. database, 3rd party APIs).
+- **AI Coding Agent Rules:** 1-click configuration for Cursor, Claude Code, Copilot, and Antigravity.
+
+### Running VibeCI Tests:
+```bash
+python -m pytest backend/tests/test_vibeci_integration.py -v
+python -m pytest vibeci/tests -q
+```
+
+Detailed architecture and API specifications are in [docs/VIBECI_INTEGRATION.md](docs/VIBECI_INTEGRATION.md).

@@ -10,7 +10,9 @@ from .auth import current_user
 from .database import utc_now
 
 EVENT_TYPES = frozenset({'SCAN_COMPLETED', 'AI_REVIEW_COMPLETED', 'PATCH_PROPOSED',
-                         'PATCH_APPROVED', 'PATCH_REJECTED', 'PATCH_CHECKED'})
+                         'PATCH_APPROVED', 'PATCH_REJECTED', 'PATCH_CHECKED',
+                         'VIBECI_PREFLIGHT_COMPLETED', 'VIBECI_VERIFICATION_COMPLETED',
+                         'VIBECI_RULES_CONFIGURED'})
 router = APIRouter(tags=['activity'])
 
 

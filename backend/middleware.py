@@ -15,6 +15,7 @@ PUBLIC = frozenset({
     "/api/attestation/verify",
     "/api/jobs/attestation/verify",
     "/api/webhooks/github",
+    "/api/vibeci/status",
 })
 SAFE = frozenset({"GET", "HEAD", "OPTIONS"})
 

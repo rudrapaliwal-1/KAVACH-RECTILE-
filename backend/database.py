@@ -310,6 +310,22 @@ class Database:
                     created_at TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS idx_timings_job ON verification_timings(job_id, phase);
+                CREATE TABLE IF NOT EXISTS vibeci_runs (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    run_type TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    overall_status TEXT NOT NULL,
+                    duration_ms INTEGER NOT NULL,
+                    checks_total INTEGER NOT NULL,
+                    checks_passed INTEGER NOT NULL,
+                    checks_failed INTEGER NOT NULL,
+                    checks_warnings INTEGER NOT NULL,
+                    checks_unverified INTEGER NOT NULL,
+                    report_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_vibeci_runs_project ON vibeci_runs(project_id, created_at);
             """)
             try:
                 columns = {row["name"] for row in db.execute("PRAGMA table_info(approvals)")}

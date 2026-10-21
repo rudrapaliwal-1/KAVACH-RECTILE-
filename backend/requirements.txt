@@ -8,3 +8,4 @@ httpx==0.28.1
 argon2-cffi==25.1.0
 neatlogs==1.4.26
 google-genai==1.75.0
+rich>=13.0.0

@@ -1,0 +1,1 @@
+"""VibeCI build verification."""

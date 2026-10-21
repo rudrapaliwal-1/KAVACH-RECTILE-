@@ -1,0 +1,1 @@
+"""VibeCI diff analyzer."""
