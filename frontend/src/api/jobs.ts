@@ -85,7 +85,7 @@ export const api = {
     request<import("./types").PatchIntakeResponse>("/api/patches/intake", {
       method: "POST",
       body: JSON.stringify(payload),
-    }),
+    }, 60_000),
   listCandidates: (projectId?: string, findingId?: string) => {
     const params = new URLSearchParams();
     if (projectId) params.set("project_id", projectId);

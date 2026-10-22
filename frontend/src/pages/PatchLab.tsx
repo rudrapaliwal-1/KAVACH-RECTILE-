@@ -146,7 +146,7 @@ export default function PatchLab() {
     const payload: PatchIntakePayload = {
       target_app_id: "bola-demo-v1",
       job_id: selectedTargetJobId || undefined,
-      patch_text: patchText,
+      patch_text: patchText.endsWith("\n") ? patchText : patchText + "\n",
       authoring_source: sourceName,
       root_cause: rootCause,
       explanation: explanation,

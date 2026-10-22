@@ -347,8 +347,18 @@ export default function Findings() {
           )}
 
           <h3>AI Security Analysis</h3>
-          <p>Server integration: {aiReady === null ? "Checking…" : aiReady ? "Configured (live service availability may vary)" : "Not configured"}.</p>
+          <p>Server integration: {aiReady === null ? "Checking..." : aiReady ? "Configured (live service availability may vary)" : "Not configured"}.</p>
           <p>Request contextual review of this scan. It cannot independently verify a vulnerability or a patch.</p>
+          {!aiReady && (
+            <div style={{ marginTop: 10, marginBottom: 12, padding: "10px 14px", background: "rgba(239, 68, 68, 0.12)", border: "1px solid rgba(239, 68, 68, 0.35)", borderRadius: 6, color: "#fca5a5", fontSize: "0.875rem" }}>
+              <strong>Server integration not configured:</strong> Set <code>GEMINI_API_KEY</code> in the backend environment to enable external AI security reviews.
+            </div>
+          )}
+          {error && (
+            <div className="error-banner" style={{ marginTop: 10, marginBottom: 12 }} role="alert">
+              {error}
+            </div>
+          )}
 
           {preview ? (
             <>

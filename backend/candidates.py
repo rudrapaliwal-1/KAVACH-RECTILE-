@@ -148,11 +148,14 @@ class CandidateLabEngine:
         actor_id: str = "system",
     ) -> PatchIntakeResponse:
         """Validates and persists a candidate patch submission from any AI or manual source."""
-        # 1. Diff Format Validation & Extraction
-        files_changed, additions, deletions = parse_and_validate_unified_diff(payload.patch_text)
+        # 1. Diff Format Validation & Extraction (normalize trailing newline)
+        patch_text = payload.patch_text or ""
+        if patch_text and not patch_text.endswith("\n"):
+            patch_text += "\n"
+        files_changed, additions, deletions = parse_and_validate_unified_diff(patch_text)
 
         # 2. Authoritative Hash Recomputation (Never trust client hash)
-        authoritative_hash = patch_hash(payload.patch_text)
+        authoritative_hash = patch_hash(patch_text)
 
         # 3. Source Revision Validation (Never trust client revision)
         actual_source_revision = self._resolve_source_revision(payload.project_id)
@@ -191,7 +194,7 @@ class CandidateLabEngine:
         # Run backend policy
         try:
             target_to_eval = "bola-demo-v1" if not payload.project_id else target_app
-            b_policy = validate_patch(target_to_eval, payload.patch_text, files_changed, attempt=1, settings=self.settings)
+            b_policy = validate_patch(target_to_eval, patch_text, files_changed, attempt=1, settings=self.settings)
             if not b_policy.allowed:
                 policy_passed = False
                 policy_reasons.extend(b_policy.reasons)
@@ -201,7 +204,7 @@ class CandidateLabEngine:
 
         # Run verification patch validator safety scan
         try:
-            PatchValidator.validate_patch(payload.patch_text, expected_hash=authoritative_hash)
+            PatchValidator.validate_patch(patch_text, expected_hash=authoritative_hash)
         except PatchValidationError as pve:
             policy_passed = False
             policy_reasons.append(str(pve))
@@ -250,7 +253,7 @@ class CandidateLabEngine:
                 job_id,
                 payload.root_cause,
                 payload.explanation,
-                payload.patch_text,
+                patch_text,
                 json.dumps(files_changed),
                 authoritative_hash,
                 policy_status,

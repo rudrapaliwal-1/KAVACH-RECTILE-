@@ -24,6 +24,10 @@ from vibeci.models import (
 STANDARD_ENV_VARS = {
     "NODE_ENV", "PORT", "PWD", "HOME", "PATH", "HOST", "HOSTNAME",
     "CI", "DEBUG", "TZ", "PUBLIC_URL", "BROWSER",
+    # Vite / modern bundler built-in environment flags (import.meta.env.*)
+    "PROD", "DEV", "MODE", "BASE_URL", "SSR",
+    # Next.js / Vercel / serverless runtime built-ins
+    "NEXT_PHASE", "VERCEL", "VERCEL_ENV",
 }
 
 # Regex for process.env.VAR_NAME or process.env["VAR_NAME"]

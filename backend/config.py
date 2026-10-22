@@ -76,10 +76,11 @@ class Settings:
         return cls(
             database_path=Path(os.getenv("SENTINEL_DB_PATH", "backend/sentinel.db")),
             environment=os.getenv("SENTINEL_ENV", "demo"),
-            source_root=Path(os.getenv("SENTINEL_SOURCE_ROOT", ".")),
+            source_root=Path(os.getenv("SENTINEL_SOURCE_ROOT", "verification/lab" if Path("verification/lab").is_dir() else ".")),
             project_root=Path(os.getenv("SENTINEL_PROJECT_ROOT", "backend/project_data")),
-            protected_tests_root=(Path(os.environ["SENTINEL_PROTECTED_TESTS_ROOT"])
-                                  if os.getenv("SENTINEL_PROTECTED_TESTS_ROOT") else None),
+            protected_tests_root=(Path(os.getenv("SENTINEL_PROTECTED_TESTS_ROOT"))
+                                  if os.getenv("SENTINEL_PROTECTED_TESTS_ROOT")
+                                  else (Path("verification/protected_tests") if Path("verification/protected_tests").is_dir() else None)),
             frontend_origin=os.getenv("SENTINEL_FRONTEND_ORIGIN", "http://localhost:5173"),
             operator_name=os.getenv("SENTINEL_OPERATOR_NAME", "local-operator"),
             operator_token=os.getenv("SENTINEL_OPERATOR_TOKEN", ""),

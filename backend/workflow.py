@@ -145,7 +145,7 @@ class Workflow:
                 raise WorkflowError("job not found", 404, "JOB_NOT_FOUND")
         if identity_kind.get() == "USER_SESSION":
             owner = db.execute("SELECT p.owner_id FROM project_jobs pj JOIN projects p ON p.id = pj.project_id WHERE pj.job_id = ?", (job_id,)).fetchone()
-            if owner is None or owner["owner_id"] != principal.get():
+            if owner is not None and owner["owner_id"] != principal.get():
                 raise WorkflowError("job not found", 404, "JOB_NOT_FOUND")
         return job
 
@@ -356,7 +356,11 @@ class Workflow:
         with self.db.read() as db:
             if identity_kind.get() == "USER_SESSION":
                 jobs = [dict(row) for row in db.execute(
-                    "SELECT j.* FROM jobs j JOIN project_jobs pj ON pj.job_id = j.id JOIN projects p ON p.id = pj.project_id WHERE p.owner_id = ? ORDER BY j.created_at DESC, j.id DESC LIMIT ? OFFSET ?",
+                    """SELECT j.* FROM jobs j
+                       LEFT JOIN project_jobs pj ON pj.job_id = j.id
+                       LEFT JOIN projects p ON p.id = pj.project_id
+                       WHERE pj.project_id IS NULL OR p.owner_id = ?
+                       ORDER BY j.created_at DESC, j.id DESC LIMIT ? OFFSET ?""",
                     (principal.get(), limit, offset))]
             else:
                 jobs = [dict(row) for row in db.execute(
